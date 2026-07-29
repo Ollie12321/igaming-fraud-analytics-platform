@@ -23,6 +23,72 @@ from streamlit_app import data_access as da
 
 st.set_page_config(page_title="iGaming Fraud & Analytics Platform", layout="wide", page_icon="🎰")
 
+VIP_TIER_INFO = {
+    "bronze": "Entry tier, no deposit threshold. Standard bonus terms and support queue.",
+    "silver": "Reached after sustained deposits. Slightly better bonus wagering terms than bronze.",
+    "gold": "High-value tier: bespoke offers, faster withdrawals, a named account manager.",
+    "platinum": "The operator's biggest spenders. Also the tier fraud/AML teams watch closest, because it's "
+    "where account-takeover and structuring payouts are largest in absolute terms.",
+}
+KYC_INFO = {
+    "pending": "Identity/age verification hasn't completed yet. Withdrawals are restricted until it does.",
+    "verified": "Identity confirmed against official documents, required before withdrawals under UK Gambling "
+    "Commission rules.",
+    "rejected": "Verification failed (document mismatch, underage, sanctions hit). Account is deposit-only.",
+}
+SELF_EXCLUSION_INFO = {
+    "none": "No self-exclusion in place.",
+    "cooling_off": "A short, player-initiated break. The account reactivates automatically; not the same as "
+    "self-exclusion.",
+    "self_excluded": "A player-initiated, effectively irreversible request to stop gambling (an LCCP "
+    "responsible-gambling requirement). Must never be re-marketed to, which is exactly why folding these "
+    "players into 'churn' is a serious labelling mistake. See the Data Quality tab.",
+}
+RISK_SEGMENT_INFO = {
+    "low": "Standard monitoring, no active flags.",
+    "medium": "Elevated monitoring: deposit velocity, device sharing, or other soft signals.",
+    "high": "Active fraud/AML monitoring, e.g. structuring-pattern deposits or fraud-ring device links.",
+}
+CLASSIFICATION_INFO = {
+    "public": "No restriction. Safe to share externally, e.g. game type codes.",
+    "internal": "Employee-only; not published externally, but not sensitive on its own.",
+    "confidential": "Business-sensitive or personal data requiring access control, e.g. financial totals.",
+    "restricted": "Highest sensitivity: direct identifiers or special-category data with legal access limits, "
+    "e.g. date of birth, IP address.",
+}
+FRAUD_SCENARIO_INFO = {
+    "account_takeover": "Someone other than the account owner logs in with stolen credentials and drains funds.",
+    "bonus_abuse_ring": "Linked accounts (shared device/IP) systematically farm the same signup or reload bonus.",
+    "bot_betting": "Automated scripts place bets, usually to exploit an odds error or launder funds through play.",
+    "card_testing": "Stolen card numbers are validated with many small deposits before one large fraudulent one.",
+    "self_exclusion_breach": "A player who self-excluded logs back in, which the operator must legally prevent.",
+    "structuring": "Deposits are split into amounts just under a reporting threshold to evade AML detection.",
+}
+
+
+def beginner_box(title: str, body: str) -> None:
+    with st.expander(f"🎓 New to this? {title}"):
+        st.markdown(body)
+
+
+def explain_selection(event, info: dict, key_names=("label", "x", "theta")) -> None:
+    """Render a plain-English explainer for whatever chart segment the user
+    just clicked, if we recognise it. `event` is whatever
+    `st.plotly_chart(..., on_select='rerun')` returns.
+    """
+    points = (event or {}).get("selection", {}).get("points", [])
+    if not points:
+        st.caption("Click a segment above for a plain-English explanation of what it means.")
+        return
+    point = points[0]
+    label = next((point[k] for k in key_names if point.get(k) is not None), None)
+    if label is None:
+        return
+    text = info.get(str(label).lower())
+    if text:
+        st.info(f"**{label}**: {text}")
+
+
 st.title("🎰 iGaming Fraud & Analytics Platform")
 st.caption(
     "All data is synthetically generated (no real player, payment or gambling data). "
@@ -37,9 +103,10 @@ if get_settings().use_snapshot_data:
         icon="📦",
     )
 
-tab_overview, tab_batch_stream, tab_fraud, tab_ltv, tab_gigo, tab_governance = st.tabs(
+tab_overview, tab_scd, tab_batch_stream, tab_fraud, tab_ltv, tab_gigo, tab_governance = st.tabs(
     [
         "📊 Overview",
+        "🕰️ Slowly Changing Dimensions",
         "⏱️ Batch vs. Streaming",
         "🛡️ Real-Time Fraud Detection",
         "💰 LTV & Churn",
@@ -49,16 +116,40 @@ tab_overview, tab_batch_stream, tab_fraud, tab_ltv, tab_gigo, tab_governance = s
 )
 
 with tab_overview:
+    beginner_box(
+        "What is this dashboard?",
+        "This is the analytics layer of a simulated online gambling platform. Every player, bet, payment and "
+        "fraud case here is synthetic, nobody's real data was used, but the pipeline that produced it, and every "
+        "number below, is real: generated and measured by actually running the code in this repository, not "
+        "written by hand. Use the tabs above to explore different parts of the platform. Most charts respond to "
+        "clicks, and most numbers have a hover tooltip (the small `?`) explaining what they mean.",
+    )
+
     ltv = da.load_player_ltv()
     churn = da.load_churn_labels()
     scd = da.load_scd_summary()
 
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Players", f"{len(ltv):,}")
-    col2.metric("Total LTV (GBP)", f"£{ltv['ltv_gbp'].sum():,.0f}")
-    col3.metric("Total Sessions", f"{int(ltv['total_sessions'].fillna(0).sum()):,}")
+    col1.metric("Players", f"{len(ltv):,}", help="Total registered player accounts in the simulation.")
+    col2.metric(
+        "Total LTV (GBP)",
+        f"£{ltv['ltv_gbp'].sum():,.0f}",
+        help="Lifetime Value: total deposits plus net gaming result, minus withdrawals, summed across every "
+        "player and converted to GBP.",
+    )
+    col3.metric(
+        "Total Sessions",
+        f"{int(ltv['total_sessions'].fillna(0).sum()):,}",
+        help="A session is one continuous period of play, from login to logout or timeout.",
+    )
     churn_rate = churn.loc[~churn["is_self_excluded_as_of"], "is_churned"].mean()
-    col4.metric("28-day Churn Rate", f"{churn_rate:.1%}", help="Excludes self-excluded players")
+    col4.metric(
+        "28-day Churn Rate",
+        f"{churn_rate:.1%}",
+        help="Share of players with no activity in the 28 days after the observation date. Self-excluded "
+        "players are deliberately excluded from this figure rather than counted as churned, see the "
+        "Data Quality tab for why that distinction matters.",
+    )
 
     st.subheader("Player dimension (SCD Type 2): current state")
     current = scd[scd["is_current"]]
@@ -67,7 +158,8 @@ with tab_overview:
         fig = px.pie(
             current.groupby("vip_tier", as_index=False)["n"].sum(), names="vip_tier", values="n", title="VIP tier"
         )
-        st.plotly_chart(fig, use_container_width=True)
+        event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", key="pie_vip")
+        explain_selection(event, VIP_TIER_INFO)
     with c2:
         fig = px.pie(
             current.groupby("self_exclusion_status", as_index=False)["n"].sum(),
@@ -75,22 +167,158 @@ with tab_overview:
             values="n",
             title="Self-exclusion status",
         )
-        st.plotly_chart(fig, use_container_width=True)
+        event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", key="pie_selfexcl")
+        explain_selection(event, SELF_EXCLUSION_INFO)
 
     st.caption(
         "Built from `dim_players_scd2`, a Type 2 slowly changing dimension derived directly from a "
-        "full change-log source, so any historical date can be queried point-in-time-correctly."
+        "full change-log source, so any historical date can be queried point-in-time-correctly. "
+        "See the Slowly Changing Dimensions tab for why that matters, with a worked example."
     )
 
     st.divider()
     st.markdown(
-        "This project intentionally makes three arguments at once, each with its own tab above: "
-        "streaming vs. batch is a design decision (⏱️), data engineering quality is what a downstream "
-        "model actually inherits (⚠️), and governance/retention has to be designed in, not bolted on (🔒)."
+        "This project intentionally makes four arguments at once, each with its own tab above: "
+        "history matters, not just current state (🕰️), streaming vs. batch is a design decision (⏱️), "
+        "data engineering quality is what a downstream model actually inherits (⚠️), and "
+        "governance/retention has to be designed in, not bolted on (🔒)."
     )
+
+with tab_scd:
+    st.subheader("Why 'the current value' isn't good enough")
+    beginner_box(
+        "What's a Slowly Changing Dimension?",
+        "A player's VIP tier, KYC status, self-exclusion status, and risk segment all change over time. If a "
+        "database only stores the *current* value of each, you lose the ability to answer 'what was true back "
+        "then?', which matters for fraud investigations, regulatory reporting, and training a model without "
+        "cheating (using information from the future that the business didn't actually have at the time). A "
+        "'Slowly Changing Dimension Type 2' (SCD2) keeps every version of a row, each stamped with the exact "
+        "window of time it was true (`valid_from` / `valid_to`), so any historical date can be queried "
+        "correctly, not just 'now'.",
+    )
+
+    timeline = da.load_scd_timeline()
+    timeline["valid_from"] = pd.to_datetime(timeline["valid_from"])
+    valid_to_dt = pd.to_datetime(timeline["valid_to"])
+    now_reference = max(valid_to_dt.max(), timeline["valid_from"].max()) + pd.Timedelta(days=14)
+    timeline["valid_to_display"] = valid_to_dt.fillna(now_reference)
+
+    version_counts = timeline.groupby("player_id").size()
+    player_options = version_counts.sort_values(ascending=False).index.tolist()
+    picked_player = st.selectbox(
+        "Pick a player with a recorded history",
+        player_options,
+        format_func=lambda pid: f"{pid[:8]}… ({version_counts[pid]} recorded attribute changes)",
+    )
+    player_rows = timeline[timeline["player_id"] == picked_player].sort_values("valid_from").reset_index(drop=True)
+
+    attr_cols = ["vip_tier", "kyc_status", "self_exclusion_status", "risk_segment"]
+    melted = [
+        {
+            "Attribute": attr.replace("_", " ").title(),
+            "Value": row[attr],
+            "Start": row["valid_from"],
+            "Finish": row["valid_to_display"],
+        }
+        for _, row in player_rows.iterrows()
+        for attr in attr_cols
+    ]
+    fig = px.timeline(
+        pd.DataFrame(melted),
+        x_start="Start",
+        x_end="Finish",
+        y="Attribute",
+        color="Value",
+        title=f"Attribute history for player {picked_player[:8]}…",
+    )
+    fig.update_yaxes(autorange="reversed")
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption(
+        "Each bar is one SCD2 row: a period during which that attribute value was actually true. Derived "
+        "directly from a full change-log source (`raw.player_attribute_history`) using window functions, no "
+        "mutable snapshot state needed. Hover a bar for exact dates."
+    )
+
+    st.divider()
+    st.subheader("Try it: ask the same question two ways")
+    st.caption("Imagine you're a fraud analyst investigating something that happened on a specific date.")
+    min_d, max_d = player_rows["valid_from"].min().date(), now_reference.date()
+    picked_date = st.slider("Pick a date to investigate", min_value=min_d, max_value=max_d, value=min_d)
+
+    # Compare at day granularity, matching what the slider actually offers:
+    # a valid_from later on the same calendar day as `picked_date` should
+    # still count as covering it.
+    valid_from_date = player_rows["valid_from"].dt.date
+    valid_to_date = player_rows["valid_to_display"].dt.date
+    point_in_time_row = player_rows[(valid_from_date <= picked_date) & (valid_to_date >= picked_date)]
+    current_row = player_rows[player_rows["is_current"]]
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**Correct: point-in-time SCD2 lookup**")
+        if not point_in_time_row.empty:
+            r = point_in_time_row.iloc[0]
+            st.write(f"Risk segment on {picked_date}: **{r['risk_segment']}**")
+            st.write(f"KYC status on {picked_date}: **{r['kyc_status']}**")
+        else:
+            st.write("No record covers this date (before signup or after the data window).")
+    with col2:
+        st.markdown("**Naive: 'just join the current row'**")
+        r_naive = current_row.iloc[0]
+        st.write(f"Risk segment 'as of' {picked_date}: **{r_naive['risk_segment']}**")
+        st.write(f"KYC status 'as of' {picked_date}: **{r_naive['kyc_status']}**")
+
+    if not point_in_time_row.empty:
+        r_correct = point_in_time_row.iloc[0]
+        if r_correct["risk_segment"] != r_naive["risk_segment"] or r_correct["kyc_status"] != r_naive["kyc_status"]:
+            st.error(
+                "Mismatch for this date: the naive 'current value' lookup gives the wrong answer. This player "
+                "happens to show it clearly; for how often this goes wrong across the whole dataset, see below."
+            )
+        else:
+            st.success("No mismatch for this particular date/player. Try a different date, or see the number below.")
+
+    gigo = da.load_gigo_results()
+    if gigo and "scd_point_in_time_lookup" in gigo:
+        sp = gigo["scd_point_in_time_lookup"]
+        total = sp["total_lookups"]
+        mismatches = sp["mismatches_using_current_attributes_instead_of_scd"]
+        pct = mismatches / total * 100 if total else 0
+        st.metric(
+            "Across every real fraud-investigation lookup in this dataset",
+            f"{mismatches} / {total} wrong ({pct:.1f}%)",
+            help="Every fraud/abuse ground-truth event has a timestamp. This compares the player's risk "
+            "segment looked up point-in-time via SCD2 (correct) against looked-up from the current/latest "
+            "row (naive) for every one of those events.",
+        )
+
+    with st.expander("See the SQL: naive current-state join vs. correct point-in-time join"):
+        st.code(
+            "-- Naive: always joins today's attributes, even for a historical event\n"
+            "select e.*, p.risk_segment\n"
+            "from fraud_events e\n"
+            "join players p on p.player_id = e.player_id;  -- 'players' only ever has the current row",
+            language="sql",
+        )
+        st.code(
+            "-- Correct: joins the attribute value that was true AT THE TIME of the event\n"
+            "-- (this is the real query from dbt/models/marts/fct_churn_labels.sql)\n"
+            "select p.player_id, p.self_exclusion_status\n"
+            "from dim_players_scd2 p\n"
+            "where p.valid_from <= :as_of_date\n"
+            "  and (p.valid_to is null or p.valid_to > :as_of_date);",
+            language="sql",
+        )
 
 with tab_batch_stream:
     st.subheader("Same fraud pattern, different processing paradigm")
+    beginner_box(
+        "Why would you ever check for fraud less often than 'always'?",
+        "Checking continuously (streaming) costs more to build and run than checking on a schedule (batch). "
+        "That cost is worth it exactly when the delay between something happening and someone noticing it "
+        "translates directly into money lost or harm done, and not worth it when it doesn't. This tab lets you "
+        "put a real number on that delay for different fraud types, using this project's own measured data.",
+    )
     st.caption(
         "Pick a fraud scenario and a hypothetical detection interval. The exposure figure below is "
         "computed from this project's real measured event rate and average transaction value for that "
@@ -104,8 +332,16 @@ with tab_batch_stream:
     joined = summary.merge(exposure, on=["scenario_type", "entity_type"], how="left")
     joined["label"] = joined["scenario_type"] + " · " + joined["entity_type"]
 
-    choice = st.selectbox("Fraud scenario", joined["label"].tolist())
+    choice = st.selectbox(
+        "Fraud scenario",
+        joined["label"].tolist(),
+        help="Each option is a distinct fraud/abuse pattern injected into the synthetic data. See the "
+        "Real-Time Fraud Detection tab for what each one means.",
+    )
     row = joined.loc[joined["label"] == choice].iloc[0]
+    scenario_key = row["scenario_type"]
+    if scenario_key in FRAUD_SCENARIO_INFO:
+        st.caption(f"ℹ️ {FRAUD_SCENARIO_INFO[scenario_key]}")
 
     events_per_day = row["ground_truth_count"] / simulation_days
     has_amount = pd.notna(row["avg_amount_gbp"])
@@ -119,7 +355,13 @@ with tab_batch_stream:
         ("Once a day (daily batch)", 24.0),
     ]
     labels = [i[0] for i in intervals]
-    picked_label = st.select_slider("If this scenario were checked...", options=labels, value=labels[-1])
+    picked_label = st.select_slider(
+        "If this scenario were checked...",
+        options=labels,
+        value=labels[-1],
+        help="Drag towards 'Real-time' to see what the actually-deployed streaming detector achieves; drag "
+        "towards 'daily batch' to see what you'd be risking if you ran this the same way as LTV/churn.",
+    )
     interval_hours = dict(intervals)[picked_label]
 
     if interval_hours == 0.0:
@@ -142,18 +384,33 @@ with tab_batch_stream:
         wait_display = f"{expected_wait_hours:.1f} hrs"
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("Real events/day in this data", f"{events_per_day:.2f}")
-    col2.metric("Expected time undetected", wait_display)
+    col1.metric(
+        "Real events/day in this data",
+        f"{events_per_day:.2f}",
+        help="Ground-truth count for this scenario divided by the number of days simulated.",
+    )
+    col2.metric(
+        "Expected time undetected",
+        wait_display,
+        help="How long, on average, this type of event would sit undetected at the selected check interval.",
+    )
     if has_amount:
         exposure_gbp = expected_extra_events * row["avg_amount_gbp"]
         exposure_display = f"£{exposure_gbp:,.0f}" if exposure_gbp >= 1 else f"£{exposure_gbp:.2f}"
         col3.metric(
             "Estimated exposure before caught",
             exposure_display,
-            help=f"{expected_extra_events:.3f} extra events × £{row['avg_amount_gbp']:,.2f} avg value/event",
+            help=f"{expected_extra_events:.3f} extra events × £{row['avg_amount_gbp']:,.2f} avg value/event "
+            "(the average GBP value at risk per event of this type, measured from this project's own "
+            "payment/stake data).",
         )
     else:
-        col3.metric("Estimated extra events before caught", f"{expected_extra_events:.3f}")
+        col3.metric(
+            "Estimated extra events before caught",
+            f"{expected_extra_events:.3f}",
+            help="This scenario type (a login event) has no direct monetary value attached, so this counts "
+            "events rather than pounds.",
+        )
     st.caption(f"Expected wait time uses {wait_source}.")
 
     chart_rows = []
@@ -198,6 +455,13 @@ with tab_batch_stream:
 
 with tab_fraud:
     st.subheader("Detector performance vs. injected ground truth")
+    beginner_box(
+        "How do you know if a fraud detector is actually any good?",
+        "You inject known fraud/abuse patterns into the data with a hidden 'ground truth' label, never shown "
+        "to the detector, then check afterwards what fraction it actually caught (recall), how many innocent "
+        "events it wrongly flagged (false positives), and how quickly it flagged the real ones (latency). "
+        "That's exactly what this tab shows: nothing here is asserted, it's all scored after the fact.",
+    )
     st.caption(
         "Every number below is measured, not assumed: labelled fraud/abuse scenarios are injected into the "
         "synthetic data with ground truth that is never shown to the detector, then scored after the fact."
@@ -222,7 +486,8 @@ with tab_fraud:
             summary, x="scenario_type", y="recall", color="entity_type", barmode="group", title="Recall by scenario"
         )
         fig.update_yaxes(range=[0, 1], tickformat=".0%")
-        st.plotly_chart(fig, use_container_width=True)
+        event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", key="bar_recall")
+        explain_selection(event, FRAUD_SCENARIO_INFO)
     with col2:
         fig = px.bar(
             summary,
@@ -233,6 +498,10 @@ with tab_fraud:
             title="Avg detection latency (seconds)",
         )
         st.plotly_chart(fig, use_container_width=True)
+        st.caption(
+            "Note the log-scale-worthy gap: most rules fire in under a second. Account takeover (login) is the "
+            "exception, see the footnote in the README, it waits for a second confirming signal by design."
+        )
 
     st.subheader("Recent flags")
     flags = da.load_recent_flags()
@@ -242,6 +511,12 @@ with tab_fraud:
         st.dataframe(flags, use_container_width=True, hide_index=True)
 
 with tab_ltv:
+    beginner_box(
+        "What's LTV and why does churn get measured this way?",
+        "Lifetime Value (LTV) is roughly 'how much money has this player generated for the operator, in total, "
+        "converted to one currency'. Churn is 'has this player gone quiet'. Both are computed on a daily batch "
+        "schedule (see the Batch vs. Streaming tab for why that's the right call here) rather than continuously.",
+    )
     ltv = da.load_player_ltv().dropna(subset=["ltv_gbp"])
     churn = da.load_churn_labels()
 
@@ -249,10 +524,20 @@ with tab_ltv:
     with col1:
         fig = px.histogram(ltv, x="ltv_gbp", nbins=50, title="LTV distribution (GBP)")
         st.plotly_chart(fig, use_container_width=True)
+        st.caption("Heavily right-skewed, as is typical: a small share of players account for a large share of value.")
     with col2:
         by_country = ltv.groupby("country", as_index=False)["ltv_gbp"].mean().sort_values("ltv_gbp", ascending=False)
         fig = px.bar(by_country, x="country", y="ltv_gbp", title="Avg LTV by market (GBP)")
-        st.plotly_chart(fig, use_container_width=True)
+        event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", key="bar_ltv_country")
+        points = (event or {}).get("selection", {}).get("points", [])
+        if points:
+            country = points[0].get("x")
+            row = by_country.loc[by_country["country"] == country]
+            if not row.empty:
+                st.info(
+                    f"**{country}**: average LTV £{row['ltv_gbp'].iloc[0]:,.0f}, "
+                    f"{(ltv['country'] == country).sum():,} players."
+                )
 
     st.subheader("Churn composition")
     composition = (
@@ -270,6 +555,15 @@ with tab_ltv:
 
 with tab_gigo:
     st.subheader("Same model. Same players. Only the pipeline changed.")
+    beginner_box(
+        "What does 'garbage in, garbage out' actually mean here?",
+        "Every card below is a real, specific way a naive database query silently produces a wrong number, "
+        "each shown with the actual broken SQL and the actual fix. Some of them measurably change the "
+        "figures in this exact dataset, tick the box and watch the number move. A few didn't happen to be "
+        "triggered by this particular synthetic run, those are labelled clearly, but the SQL pattern is real "
+        "and common in production. The lesson underneath all ten: a model trained on any of this can look "
+        "statistically fine and still be quietly wrong.",
+    )
     results = da.load_gigo_results()
     if results is None:
         st.info("Run `python -m ml.naive_vs_engineered` to generate this comparison.")
@@ -278,47 +572,128 @@ with tab_gigo:
         naive_total = pv["naive_total_deposits_unconverted_currency"]
         engineered_total = pv["engineered_total_deposits_gbp"]
         dedup_pct = pv["dedup_only_distortion_pct"]
+        declined_pct = pv.get("declined_payments_distortion_pct", 0.0)
         currency_pct = pv["currency_mixing_distortion_pct"]
         combined_pct = pv["combined_distortion_pct"]
-
-        st.markdown("**Toggle each data engineering fix on or off and watch the reported number change:**")
-        c1, c2 = st.columns(2)
-        dedup_fixed = c1.checkbox("Deduplicate ingestion retries", value=False)
-        currency_fixed = c2.checkbox("Normalise 5 currencies to GBP", value=False)
-
         gap = naive_total - engineered_total
         dedup_share = dedup_pct / combined_pct if combined_pct else 0
+        declined_share = declined_pct / combined_pct if combined_pct else 0
         currency_share = currency_pct / combined_pct if combined_pct else 0
-        remaining_share = (0 if dedup_fixed else dedup_share) + (0 if currency_fixed else currency_share)
+
+        st.markdown("#### Live deposit calculator: tick each fix and watch the total move")
+        c1, c2, c3 = st.columns(3)
+        dedup_fixed = c1.checkbox("1. Deduplicate ingestion retries", value=False)
+        currency_fixed = c2.checkbox("2. Normalise 5 currencies to GBP", value=False)
+        declined_fixed = c3.checkbox("3. Exclude declined/failed payments", value=False)
+
+        remaining_share = (
+            (0 if dedup_fixed else dedup_share)
+            + (0 if currency_fixed else currency_share)
+            + (0 if declined_fixed else declined_share)
+        )
         live_total = engineered_total + gap * remaining_share
         live_distortion_pct = combined_pct * remaining_share
 
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Reported total deposits (live)", f"£{live_total:,.0f}")
-        col2.metric("Correct total deposits", f"£{engineered_total:,.0f}")
-        col3.metric(
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Reported total deposits (live)", f"£{live_total:,.0f}")
+        m2.metric("Correct total deposits", f"£{engineered_total:,.0f}")
+        m3.metric(
             "Distortion right now",
             f"{live_distortion_pct:+.1f}%",
             delta="Correct" if live_distortion_pct == 0 else f"{live_distortion_pct:.1f}% too high",
             delta_color="normal" if live_distortion_pct == 0 else "inverse",
         )
-
-        if not dedup_fixed and not currency_fixed:
-            st.caption(
-                f"Untouched raw read: £{naive_total:,.0f} reported vs. £{engineered_total:,.0f} actual. "
-                "Tick either box above to fix one issue at a time."
-            )
-        elif dedup_fixed and currency_fixed:
-            st.success("Both fixes applied: the reported number now matches the actual figure exactly.")
+        if live_distortion_pct == 0:
+            st.success("All three fixes applied: the reported number now matches the actual figure exactly.")
         else:
-            st.caption(f"One fix applied, {live_distortion_pct:.1f} points of distortion still remaining.")
+            st.caption(f"Untouched raw read: £{naive_total:,.0f}. Tick boxes above to fix issues one at a time.")
+
+        with st.expander("See the SQL for cards 1–3"):
+            st.markdown("**1. Deduplicate ingestion retries**")
+            st.code(
+                "-- Broken: sums every row exactly as it arrived, including at-least-once retries\n"
+                "select sum(amount) from raw.payments where payment_type = 'deposit';",
+                language="sql",
+            )
+            st.code(
+                "-- Fixed (real query, dbt/models/staging/stg_payments.sql)\n"
+                "with deduplicated as (\n"
+                "    select *, row_number() over (partition by payment_id order by ts) as rn\n"
+                "    from raw.payments\n"
+                ")\n"
+                "select sum(amount) from deduplicated where rn = 1 and payment_type = 'deposit';",
+                language="sql",
+            )
+            st.markdown("**2. Normalise currencies to GBP**")
+            st.code(
+                "-- Broken: EUR, USD, GBP, CAD, SEK all summed as if they were equal\n"
+                "select sum(amount) from raw.payments where payment_type = 'deposit';",
+                language="sql",
+            )
+            st.code(
+                "-- Fixed (real query, dbt/models/staging/stg_payments.sql)\n"
+                "select sum(amount * fx.rate_to_gbp)\n"
+                "from raw.payments p\n"
+                "join fx_rates_to_gbp fx on upper(p.currency) = fx.currency\n"
+                "where p.payment_type = 'deposit';",
+                language="sql",
+            )
+            st.markdown("**3. Exclude declined/failed payments**")
+            st.code(
+                "-- Broken: counts a card that was declined as if the deposit went through\n"
+                "select sum(amount_gbp) from stg_payments where payment_type = 'deposit';",
+                language="sql",
+            )
+            st.code(
+                "-- Fixed (real query, dbt/models/intermediate/int_player_daily_activity_clean.sql)\n"
+                "select sum(amount_gbp) from stg_payments\n"
+                "where payment_type = 'deposit' and status = 'completed';",
+                language="sql",
+            )
+            st.caption(
+                f"In this run: dedup alone = {dedup_pct:.1f}pp of distortion, currency mixing = {currency_pct:.1f}pp, "
+                f"declined payments = {declined_pct:.3f}pp (small here; a real operator processes this at far "
+                "higher volume, where it compounds)."
+            )
 
         st.divider()
+        st.markdown("#### Live engagement calculator")
+        bs = results.get("bot_session_contamination", {})
+        if bs:
+            bot_fixed = st.checkbox("4. Exclude bot-inflated sessions from wagering totals", value=False)
+            naive_stake = bs["naive_total_stake_incl_bots_gbp"]
+            engineered_stake = bs["engineered_total_stake_excl_bots_gbp"]
+            live_stake = engineered_stake if bot_fixed else naive_stake
+            stake_pct = (naive_stake - engineered_stake) / engineered_stake * 100 if engineered_stake else 0
+            n1, n2 = st.columns(2)
+            n1.metric("Reported total wagered (live)", f"£{live_stake:,.0f}")
+            n2.metric(
+                "Bot-driven distortion right now",
+                f"{0 if bot_fixed else stake_pct:+.3f}%",
+                help=f"{bs['bot_session_count']} bot-flagged sessions out of the full session pool.",
+            )
+            with st.expander("See the SQL for card 4"):
+                st.code(
+                    "-- Broken: every session's stake counts towards player engagement, including bots\n"
+                    "select sum(stake_amount) from raw.game_rounds;",
+                    language="sql",
+                )
+                st.code(
+                    "select sum(gr.stake_amount)\n"
+                    "from raw.game_rounds gr\n"
+                    "left join bot_flagged_sessions bs on bs.session_id = gr.session_id\n"
+                    "where bs.session_id is null;",
+                    language="sql",
+                )
+                st.caption(
+                    f"Only {bs['bot_session_count']} sessions in this run were bot-flagged, so the £ effect is "
+                    "small here, but a live botnet runs continuously, not once."
+                )
 
+        st.divider()
+        st.markdown("#### Live labelling calculator")
         sx = results["self_exclusion_contamination"]
-        label_fixed = st.checkbox(
-            "Correctly separate self-excluded players from ordinary churn", value=False, key="label_fix"
-        )
+        label_fixed = st.checkbox("5. Correctly separate self-excluded players from ordinary churn", value=False)
         mislabelled = sx["self_excluded_players_mislabelled_as_churn_in_naive"]
         total_sx = sx["total_self_excluded_players"]
         if label_fixed:
@@ -330,6 +705,132 @@ with tab_gigo:
                 "A model trained on this label would recommend a win-back marketing campaign for every "
                 "one of these accounts, people who have asked the operator to stop letting them gamble."
             )
+        with st.expander("See the SQL for card 5"):
+            st.code(
+                "-- Broken: 'last activity long ago' looks identical for churn and self-exclusion\n"
+                "select player_id, (last_active_date <= as_of_date) as is_churned\n"
+                "from player_activity;",
+                language="sql",
+            )
+            st.code(
+                "-- Fixed (real pattern, dbt/models/marts/fct_churn_labels.sql)\n"
+                "select p.player_id,\n"
+                "       (aa.player_id is null) as is_churned,\n"
+                "       (s.self_exclusion_status = 'self_excluded') as is_self_excluded_as_of\n"
+                "from players p\n"
+                "left join activity_after aa using (player_id)\n"
+                "left join player_status_as_of s using (player_id);  -- flagged and held out, not merged in",
+                language="sql",
+            )
+
+        st.divider()
+        st.markdown("#### Point-in-time correctness")
+        sp = results.get("scd_point_in_time_lookup", {})
+        if sp:
+            scd_fixed = st.checkbox("6. Use point-in-time SCD lookups, not 'current attribute' joins", value=False)
+            total = sp["total_lookups"]
+            mismatches = sp["mismatches_using_current_attributes_instead_of_scd"]
+            pct = mismatches / total * 100 if total else 0
+            if scd_fixed:
+                st.metric("Historical lookups using the wrong attribute value", f"0 / {total}")
+                st.success("Fixed: every lookup uses the value that was actually true at the time.")
+            else:
+                st.metric("Historical lookups using the wrong attribute value", f"{mismatches} / {total} ({pct:.1f}%)")
+                st.warning(
+                    "A model or investigation using 'current' attributes silently uses information that "
+                    "didn't exist yet, or misses a state that has since changed. Full worked example in the "
+                    "Slowly Changing Dimensions tab."
+                )
+
+        st.divider()
+        st.markdown("#### Avoid join fan-out")
+        fd = results.get("join_fanout_demo", {})
+        if fd:
+            fanout_fixed = st.checkbox("7. Aggregate before joining, not after", value=False)
+            correct_rows = fd["players"]
+            naive_rows = fd["naive_one_to_many_join_rows"]
+            if fanout_fixed:
+                st.metric("Rows produced", f"{correct_rows:,}", help="One row per player, as intended.")
+                st.success("Fixed: deposits and stakes are pre-aggregated to one row per player before joining.")
+            else:
+                st.metric(
+                    "Rows produced",
+                    f"{naive_rows:,}",
+                    delta=f"{naive_rows / correct_rows:,.0f}× more rows than players",
+                    delta_color="inverse",
+                    help=f"{fd['payments']:,} payments joined one-to-many against {fd['game_rounds']:,} game "
+                    "rounds, per player, with no aggregation first.",
+                )
+                st.warning(
+                    "Every payment row gets duplicated once per game round for that player. Any SUM() run "
+                    "on top of this join is now wrong by an enormous, silent multiple."
+                )
+            with st.expander("See the SQL for card 7"):
+                st.code(
+                    "-- Broken: one-to-many joined against one-to-many, no aggregation first\n"
+                    "select p.player_id, sum(pay.amount) as deposits, sum(gr.stake_amount) as stake\n"
+                    "from players p\n"
+                    "join payments pay on pay.player_id = p.player_id\n"
+                    "join game_rounds gr on gr.player_id = p.player_id  -- cartesian product per player\n"
+                    "group by p.player_id;",
+                    language="sql",
+                )
+                st.code(
+                    "-- Fixed: aggregate each fact table to one row per player BEFORE joining\n"
+                    "with deposits as (select player_id, sum(amount) as deposits from payments group by 1),\n"
+                    "     stakes   as (select player_id, sum(stake_amount) as stake from game_rounds group by 1)\n"
+                    "select p.player_id, d.deposits, s.stake\n"
+                    "from players p\n"
+                    "left join deposits d using (player_id)\n"
+                    "left join stakes s using (player_id);",
+                    language="sql",
+                )
+
+        st.divider()
+        st.markdown("#### Other classic failure modes (not triggered in this synthetic run, but real)")
+        st.caption(
+            "This dataset happens to be clean on these three, so there's no live number to move, but each "
+            "pattern below is a genuinely common way production pipelines get quietly wrong answers."
+        )
+        illustrative_cards = [
+            (
+                "8. Guard against NULL silently zeroing an aggregate",
+                "null_fixed",
+                "select avg(bonus_amount) as avg_bonus\nfrom bonuses;\n"
+                "-- a NULL bonus_amount is silently dropped by avg(), and would silently NULL out\n"
+                "-- an entire row total if summed into amount + bonus_amount elsewhere",
+                "select avg(coalesce(bonus_amount, 0)) as avg_bonus,\n"
+                "       count(*) filter (where bonus_amount is null) as missing_bonus_amounts\n"
+                "from bonuses;",
+                "No NULLs in `bonus_amount` in this dataset, but a single unexpected NULL is one of the most "
+                "common silent-corruption bugs in production SQL.",
+            ),
+            (
+                "9. Normalise timestamps to one timezone before daily aggregation",
+                "tz_fixed",
+                "select date(event_ts) as day, count(*)\nfrom sessions\ngroup by 1;\n"
+                "-- truncating a mixed-timezone timestamp to a date silently shifts some rows a day early or late",
+                "select date(event_ts at time zone 'UTC') as day_utc, count(*)\n" "from sessions\ngroup by 1;",
+                "Every timestamp in this dataset is already stored consistently in UTC, but mixed-timezone "
+                "truncation is a classic source of an off-by-one-day error in daily batch reports.",
+            ),
+            (
+                "10. Store money as NUMERIC/DECIMAL, not FLOAT",
+                "float_fixed",
+                "create table payments (\n    amount float  -- binary floating point can't represent 0.10 exactly\n);\n"
+                "-- sum(amount) over millions of rows accumulates visible rounding drift",
+                "create table payments (\n    amount numeric(12,2)  -- exact decimal arithmetic, no drift\n);",
+                "This project already uses NUMERIC throughout, so there's no drift to show, but FLOAT/DOUBLE "
+                "for money is a real, well-documented bug class once enough rows accumulate.",
+            ),
+        ]
+        cols = st.columns(3)
+        for col, (title, key, naive_sql, fixed_sql, note) in zip(cols, illustrative_cards):
+            with col:
+                st.markdown(f"**{title}**")
+                fixed = st.checkbox("Show the fix", value=False, key=key)
+                st.code(fixed_sql if fixed else naive_sql, language="sql")
+                st.caption(note)
 
         st.divider()
 
@@ -345,12 +846,19 @@ with tab_gigo:
             "AUC is close between the two runs, which is exactly the point: a model can look statistically "
             "fine while its labels are semantically wrong. The failure isn't in the model's ability to "
             "discriminate, it's in what a 'positive' prediction means and what action gets taken on it. "
-            "Toggling the checkboxes above shows the same lesson at the data layer, before a model is "
-            "even involved: bad data engineering costs you the answer, not just the model's confidence in it."
+            "The ten cards above show the same lesson at the data layer, before a model is even involved: "
+            "bad data engineering costs you the answer, not just the model's confidence in it."
         )
 
 with tab_governance:
     st.subheader("Every column is classified, retained, and erasable on purpose")
+    beginner_box(
+        "What does 'data governance' actually involve, day to day?",
+        "Three concrete things: knowing how sensitive each piece of data is (classification), knowing how long "
+        "you're legally required or allowed to keep it (retention), and having a real, working process for "
+        "when a customer asks you to delete their data even though other laws require you to keep some of it "
+        "anyway (erasure vs. retention). All three are below, with a live example you can run yourself.",
+    )
     st.caption(
         "Parsed directly from `dbt/models/**/schema.yml`: this is the same metadata that governs access "
         "boundaries and the erasure logic elsewhere in the repo, not a separate copy of it. "
@@ -368,12 +876,28 @@ with tab_governance:
                 path=["classification", "retention_category"],
                 title="Columns by classification tier → retention category",
             )
-            st.plotly_chart(fig, use_container_width=True)
+            event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", key="sunburst_class")
+            explain_selection(event, CLASSIFICATION_INFO, key_names=("label",))
         with col2:
             pii_counts = classification["pii"].map({True: "PII", False: "Not PII"}).value_counts().reset_index()
             pii_counts.columns = ["Category", "Columns"]
             fig = px.pie(pii_counts, names="Category", values="Columns", title="PII vs. non-PII columns", hole=0.4)
-            st.plotly_chart(fig, use_container_width=True)
+            event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", key="pie_pii")
+            points = (event or {}).get("selection", {}).get("points", [])
+            if points:
+                label = points[0].get("label")
+                if label == "PII":
+                    st.info(
+                        "**PII**: directly or indirectly identifies a real person, e.g. date of birth, IP "
+                        "address, device fingerprint. Subject to UK GDPR."
+                    )
+                elif label == "Not PII":
+                    st.info(
+                        "**Not PII**: aggregate or categorical data with no path back to an individual on its "
+                        "own, e.g. a game type code or a country-level total."
+                    )
+            else:
+                st.caption("Click a segment above for a plain-English explanation of what it means.")
 
         with st.expander(f"See all {len(classification)} classified columns"):
             st.dataframe(classification, use_container_width=True, hide_index=True)

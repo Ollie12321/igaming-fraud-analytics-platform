@@ -42,6 +42,18 @@ QUERIES = {
         group by 1, 2, 3, 4, 5
         order by 1, 2, 3, 4
     """,
+    # Full change history for the players with the most attribute changes:
+    # the most interesting timelines for the SCD explainer tab.
+    "scd_timeline": """
+        select player_id, country, valid_from, valid_to, is_current,
+               vip_tier, kyc_status, self_exclusion_status, risk_segment
+        from public_marts.dim_players_scd2
+        where player_id in (
+            select player_id from public_marts.dim_players_scd2
+            group by 1 order by count(*) desc limit 15
+        )
+        order by player_id, valid_from
+    """,
     # Real average GBP value at risk per undetected event, per scenario. Feeds
     # the batch-vs-streaming exposure calculator: it's what makes "detecting
     # this an hour later" translate into a pound figure instead of a vibe.

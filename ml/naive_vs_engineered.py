@@ -139,6 +139,23 @@ def _dedup_only_distortion_pct(engine) -> float:
     return float((row["raw_with_dupes_gbp"] - row["deduped_gbp"]) / row["deduped_gbp"] * 100)
 
 
+def _declined_payment_distortion_pct(engine) -> float:
+    """How much of the distortion is counting declined/failed payments as if
+    they were successful deposits, holding dedup and currency conversion
+    constant (both sides read from the already-deduped, already-converted
+    staging model)? Isolates this effect from currency mixing.
+    """
+    query = """
+        select
+            sum(amount_gbp) as with_declined_gbp,
+            sum(amount_gbp) filter (where status = 'completed') as completed_only_gbp
+        from public_staging.stg_payments
+        where payment_type = 'deposit'
+    """
+    row = pd.read_sql(text(query), engine).iloc[0]
+    return float((row["with_declined_gbp"] - row["completed_only_gbp"]) / row["completed_only_gbp"] * 100)
+
+
 def _fit_and_score(X: pd.DataFrame, y: pd.Series) -> dict:
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=RANDOM_STATE, stratify=y)
     # class_weight="balanced" because churn is rare (~2-3% positive); without
@@ -188,8 +205,72 @@ def run() -> dict:
     engineered_total_deposits = float(engineered["total_deposits_gbp"].sum())
     deposit_distortion_pct = (naive_total_deposits - engineered_total_deposits) / engineered_total_deposits * 100
     dedup_only_pct = _dedup_only_distortion_pct(engine)
+    declined_only_pct = _declined_payment_distortion_pct(engine)
 
     n_self_excluded_mislabelled = int((engineered["is_self_excluded_as_of"] & engineered["is_churned"]).sum())
+
+    bot_stake = pd.read_sql(
+        text("""
+            with bot_sessions as (
+                select entity_id as session_id
+                from public_staging.stg_fraud_ground_truth
+                where entity_type = 'session' and scenario_type = 'bot_betting'
+            )
+            select
+                sum(gr.stake_amount) as naive_total_stake_incl_bots,
+                sum(gr.stake_amount) filter (where bs.session_id is null) as engineered_total_stake_excl_bots,
+                count(distinct bs.session_id) as bot_session_count
+            from raw.game_rounds gr
+            left join bot_sessions bs on bs.session_id = gr.session_id
+            """),
+        engine,
+    ).iloc[0]
+
+    scd_lookup = pd.read_sql(
+        text("""
+            with events as (
+                select entity_id as player_id, injected_ts as event_ts
+                from public_staging.stg_fraud_ground_truth
+                where entity_type = 'player'
+            ),
+            point_in_time as (
+                select ev.player_id, ev.event_ts, scd.risk_segment as risk_segment_correct
+                from events ev
+                join public_marts.dim_players_scd2 scd
+                  on scd.player_id = ev.player_id
+                 and ev.event_ts >= scd.valid_from
+                 and (scd.valid_to is null or ev.event_ts < scd.valid_to)
+            ),
+            naive_lookup as (
+                select ev.player_id, ev.event_ts, scd.risk_segment as risk_segment_naive_current
+                from events ev
+                join public_marts.dim_players_scd2 scd
+                  on scd.player_id = ev.player_id
+                 and scd.is_current = true
+            )
+            select
+                count(*) as total_lookups,
+                count(*) filter (where p.risk_segment_correct != n.risk_segment_naive_current) as mismatches
+            from point_in_time p
+            join naive_lookup n using (player_id, event_ts)
+            """),
+        engine,
+    ).iloc[0]
+
+    fanout = pd.read_sql(
+        text("""
+            select
+                (select count(*) from raw.players) as players,
+                (select count(*) from raw.payments) as payments,
+                (select count(*) from raw.game_rounds) as game_rounds,
+                (
+                    select sum(pc * gc)
+                    from (select player_id, count(*) as pc from raw.payments group by 1) p
+                    join (select player_id, count(*) as gc from raw.game_rounds group by 1) g using (player_id)
+                ) as naive_join_rows
+            """),
+        engine,
+    ).iloc[0]
 
     results = {
         "as_of_date": str(as_of),
@@ -201,11 +282,27 @@ def run() -> dict:
             "engineered_total_deposits_gbp": round(engineered_total_deposits, 2),
             "combined_distortion_pct": round(deposit_distortion_pct, 1),
             "dedup_only_distortion_pct": round(dedup_only_pct, 1),
-            "currency_mixing_distortion_pct": round(deposit_distortion_pct - dedup_only_pct, 1),
+            "declined_payments_distortion_pct": round(declined_only_pct, 1),
+            "currency_mixing_distortion_pct": round(deposit_distortion_pct - dedup_only_pct - declined_only_pct, 1),
         },
         "self_exclusion_contamination": {
             "self_excluded_players_mislabelled_as_churn_in_naive": n_self_excluded_mislabelled,
             "total_self_excluded_players": int(engineered["is_self_excluded_as_of"].sum()),
+        },
+        "bot_session_contamination": {
+            "naive_total_stake_incl_bots_gbp": round(float(bot_stake["naive_total_stake_incl_bots"]), 2),
+            "engineered_total_stake_excl_bots_gbp": round(float(bot_stake["engineered_total_stake_excl_bots"]), 2),
+            "bot_session_count": int(bot_stake["bot_session_count"]),
+        },
+        "scd_point_in_time_lookup": {
+            "total_lookups": int(scd_lookup["total_lookups"]),
+            "mismatches_using_current_attributes_instead_of_scd": int(scd_lookup["mismatches"]),
+        },
+        "join_fanout_demo": {
+            "players": int(fanout["players"]),
+            "payments": int(fanout["payments"]),
+            "game_rounds": int(fanout["game_rounds"]),
+            "naive_one_to_many_join_rows": int(fanout["naive_join_rows"]),
         },
     }
 

@@ -6,6 +6,7 @@
     "player_ltv",
     "churn_labels",
     "scd_summary",
+    "scd_timeline",
     "scenario_exposure",
     "erasure_demo",
     "gigo_comparison"

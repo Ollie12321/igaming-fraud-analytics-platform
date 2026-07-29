@@ -98,6 +98,26 @@ def load_scd_summary() -> pd.DataFrame:
 
 
 @st.cache_data(ttl=60)
+def load_scd_timeline() -> pd.DataFrame:
+    """Full change history for a curated set of players with the most
+    attribute changes: the most interesting timelines to visualise.
+    """
+    if get_settings().use_snapshot_data:
+        return _from_snapshot("scd_timeline")
+    query = """
+        select player_id, country, valid_from, valid_to, is_current,
+               vip_tier, kyc_status, self_exclusion_status, risk_segment
+        from public_marts.dim_players_scd2
+        where player_id in (
+            select player_id from public_marts.dim_players_scd2
+            group by 1 order by count(*) desc limit 15
+        )
+        order by player_id, valid_from
+    """
+    return _from_live(query)
+
+
+@st.cache_data(ttl=60)
 def load_gigo_results() -> dict | None:
     if get_settings().use_snapshot_data:
         snapshot_path = SNAPSHOT_DIR / "gigo_comparison.json"

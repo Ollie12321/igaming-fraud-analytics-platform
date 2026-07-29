@@ -24,10 +24,26 @@
     "engineered_total_deposits_gbp": 3430534.2,
     "combined_distortion_pct": 75.4,
     "dedup_only_distortion_pct": 2.4,
+    "declined_payments_distortion_pct": 0.0,
     "currency_mixing_distortion_pct": 73.0
   },
   "self_exclusion_contamination": {
     "self_excluded_players_mislabelled_as_churn_in_naive": 58,
     "total_self_excluded_players": 58
+  },
+  "bot_session_contamination": {
+    "naive_total_stake_incl_bots_gbp": 61769806.61,
+    "engineered_total_stake_excl_bots_gbp": 61760870.61,
+    "bot_session_count": 35
+  },
+  "scd_point_in_time_lookup": {
+    "total_lookups": 90,
+    "mismatches_using_current_attributes_instead_of_scd": 6
+  },
+  "join_fanout_demo": {
+    "players": 10100,
+    "payments": 134668,
+    "game_rounds": 2481279,
+    "naive_one_to_many_join_rows": 79232326
   }
 }

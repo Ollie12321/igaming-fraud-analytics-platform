@@ -3,9 +3,12 @@
 [Live interactive dashboard](https://ollie12321-igaming-fraud-analytics-plat-streamlit-appapp-rpmiko.streamlit.app/),
 reading a versioned snapshot of this repo's synthetic data. Pick a fraud
 scenario and drag the detection-interval slider to see real exposure
-figures change, toggle data engineering fixes on/off and watch a distorted
-metric heal in real time, or run a simulated GDPR erasure request against a
-sample player.
+figures change, toggle up to ten data engineering fixes on/off (each with
+its actual naive-vs-fixed SQL) and watch distorted metrics heal in real
+time, explore a player's full attribute history on a timeline to see why
+point-in-time correctness matters, or run a simulated GDPR erasure request
+against a sample player. Every tab has a beginner-friendly explainer and
+hover tooltips alongside the deeper technical detail.
 
 An end-to-end data platform for an online gambling operator, built to answer one
 question properly: which parts of a data platform actually need to be
@@ -181,6 +184,16 @@ This is the argument in concrete, reproducible form: a downstream model can
 clear every statistical bar you check and still be built on a lie, if the
 data engineering underneath it was wrong.
 
+The dashboard's Data Quality tab expands this into ten separate, individually
+toggleable failure modes, each with its actual broken SQL next to the actual
+fix: deduplication, currency mixing, declined-payment inclusion, bot-inflated
+sessions, self-exclusion mislabelling, point-in-time SCD misuse, join
+fan-out, NULL handling, timezone truncation, and float-vs-numeric rounding.
+Seven of the ten measurably move a real number in this dataset when toggled;
+three are labelled as illustrative because this particular synthetic run
+happens to be clean on them, but the SQL pattern is a genuine, common
+production bug.
+
 ## Slowly Changing Dimensions
 
 `dim_players_scd2` (`dbt/models/marts/dim_players_scd2.sql`) is a hand-rolled
@@ -191,6 +204,13 @@ queried point-in-time-correctly (e.g. "what was this player's risk segment on
 the day of the incident?", not just "what is it now"). A custom dbt test
 (`dbt/tests/assert_scd2_no_overlapping_periods.sql`) asserts no player ever
 has two overlapping "current" periods.
+
+The dashboard's Slowly Changing Dimensions tab makes this concrete: pick a
+player and see their full attribute history rendered as a timeline, then pick
+any date and compare a correct point-in-time SCD2 lookup against a naive
+"just read the current row" lookup side by side. Across every real fraud
+investigation in this dataset, the naive approach gets the wrong answer on a
+measured, real percentage of lookups, not a hypothetical one.
 
 ## Data governance
 
