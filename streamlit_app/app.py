@@ -87,12 +87,25 @@ def explain_segment(
     """
     if not options:
         return
-    picked = st.radio(prompt, options, horizontal=True, key=key)
-    text = info.get(str(picked).lower()) or info.get(str(picked))
-    if text:
-        st.info(f"**{picked}**: {text}")
-    else:
-        st.info(f"**{picked}**")
+    # Coerce to plain Python strings: parquet/pandas can yield numpy scalars
+    # that don't match dict keys cleanly after .lower().
+    clean = [str(o) for o in options]
+    picked = st.radio(prompt, clean, horizontal=True, key=key)
+    text = info.get(picked.lower()) or info.get(picked)
+    st.info(f"**{picked}**: {text}" if text else f"**{picked}**")
+
+
+def sized_pie(df: pd.DataFrame, *, names: str, values: str, title: str, hole: float = 0.0):
+    """Pie with a fixed height so the chart canvas can't swallow widgets below it."""
+    fig = px.pie(df, names=names, values=values, title=title, hole=hole)
+    fig.update_layout(height=340, margin=dict(t=50, b=20, l=10, r=10), legend=dict(orientation="v"))
+    return fig
+
+
+def sized_bar(df: pd.DataFrame, **kwargs):
+    fig = px.bar(df, **kwargs)
+    fig.update_layout(height=360, margin=dict(t=50, b=20, l=10, r=10))
+    return fig
 
 
 st.title("🎰 iGaming Fraud & Analytics Platform")
@@ -127,8 +140,9 @@ with tab_overview:
         "This is the analytics layer of a simulated online gambling platform. Every player, bet, payment and "
         "fraud case here is synthetic, nobody's real data was used, but the pipeline that produced it, and every "
         "number below, is real: generated and measured by actually running the code in this repository, not "
-        "written by hand. Use the tabs above to explore different parts of the platform. Most charts respond to "
-        "clicks, and most numbers have a hover tooltip (the small `?`) explaining what they mean.",
+        "written by hand. Use the tabs above to explore different parts of the platform. Under most charts "
+        "you can pick a segment for a plain-English explanation, and most numbers have a hover tooltip "
+        "(the small `?`) explaining what they mean.",
     )
 
     ltv = da.load_player_ltv()
@@ -159,21 +173,24 @@ with tab_overview:
 
     st.subheader("Player dimension (SCD Type 2): current state")
     current = scd[scd["is_current"]]
+    vip_df = current.groupby("vip_tier", as_index=False)["n"].sum()
+    sx_df = current.groupby("self_exclusion_status", as_index=False)["n"].sum()
+
     c1, c2 = st.columns(2)
     with c1:
-        vip_df = current.groupby("vip_tier", as_index=False)["n"].sum()
-        fig = px.pie(vip_df, names="vip_tier", values="n", title="VIP tier")
-        st.plotly_chart(fig, use_container_width=True)
-        explain_segment(vip_df["vip_tier"].tolist(), VIP_TIER_INFO, key="pick_vip")
+        st.plotly_chart(sized_pie(vip_df, names="vip_tier", values="n", title="VIP tier"), use_container_width=True)
     with c2:
-        sx_df = current.groupby("self_exclusion_status", as_index=False)["n"].sum()
-        fig = px.pie(
-            sx_df,
-            names="self_exclusion_status",
-            values="n",
-            title="Self-exclusion status",
+        st.plotly_chart(
+            sized_pie(sx_df, names="self_exclusion_status", values="n", title="Self-exclusion status"),
+            use_container_width=True,
         )
-        st.plotly_chart(fig, use_container_width=True)
+
+    # Explainers sit below the chart row (not inside the same column as the
+    # Plotly canvas) so an oversized chart iframe can't cover the text.
+    e1, e2 = st.columns(2)
+    with e1:
+        explain_segment(vip_df["vip_tier"].tolist(), VIP_TIER_INFO, key="pick_vip")
+    with e2:
         explain_segment(sx_df["self_exclusion_status"].tolist(), SELF_EXCLUSION_INFO, key="pick_selfexcl")
 
     st.caption(
@@ -488,15 +505,13 @@ with tab_fraud:
 
     col1, col2 = st.columns(2)
     with col1:
-        fig = px.bar(
+        fig = sized_bar(
             summary, x="scenario_type", y="recall", color="entity_type", barmode="group", title="Recall by scenario"
         )
         fig.update_yaxes(range=[0, 1], tickformat=".0%")
         st.plotly_chart(fig, use_container_width=True)
-        scenario_options = summary["scenario_type"].drop_duplicates().tolist()
-        explain_segment(scenario_options, FRAUD_SCENARIO_INFO, key="pick_fraud_scenario")
     with col2:
-        fig = px.bar(
+        fig = sized_bar(
             summary,
             x="scenario_type",
             y="avg_detection_latency_seconds",
@@ -509,6 +524,9 @@ with tab_fraud:
             "Note the log-scale-worthy gap: most rules fire in under a second. Account takeover (login) is the "
             "exception, see the footnote in the README, it waits for a second confirming signal by design."
         )
+
+    scenario_options = summary["scenario_type"].drop_duplicates().tolist()
+    explain_segment(scenario_options, FRAUD_SCENARIO_INFO, key="pick_fraud_scenario")
 
     st.subheader("Recent flags")
     flags = da.load_recent_flags()
@@ -530,24 +548,26 @@ with tab_ltv:
     col1, col2 = st.columns(2)
     with col1:
         fig = px.histogram(ltv, x="ltv_gbp", nbins=50, title="LTV distribution (GBP)")
+        fig.update_layout(height=360, margin=dict(t=50, b=20, l=10, r=10))
         st.plotly_chart(fig, use_container_width=True)
         st.caption("Heavily right-skewed, as is typical: a small share of players account for a large share of value.")
     with col2:
         by_country = ltv.groupby("country", as_index=False)["ltv_gbp"].mean().sort_values("ltv_gbp", ascending=False)
-        fig = px.bar(by_country, x="country", y="ltv_gbp", title="Avg LTV by market (GBP)")
+        fig = sized_bar(by_country, x="country", y="ltv_gbp", title="Avg LTV by market (GBP)")
         st.plotly_chart(fig, use_container_width=True)
-        country = st.radio(
-            "Pick a market for a plain-English explanation",
-            by_country["country"].tolist(),
-            horizontal=True,
-            key="pick_ltv_country",
-        )
-        row = by_country.loc[by_country["country"] == country].iloc[0]
-        n_players = int((ltv["country"] == country).sum())
-        st.info(
-            f"**{country}**: average LTV £{row['ltv_gbp']:,.0f} across {n_players:,} players in this market. "
-            "Figures are GBP-normalised deposits plus net gaming result, minus withdrawals."
-        )
+
+    country = st.radio(
+        "Pick a market for a plain-English explanation",
+        [str(c) for c in by_country["country"].tolist()],
+        horizontal=True,
+        key="pick_ltv_country",
+    )
+    row = by_country.loc[by_country["country"].astype(str) == country].iloc[0]
+    n_players = int((ltv["country"].astype(str) == country).sum())
+    st.info(
+        f"**{country}**: average LTV £{row['ltv_gbp']:,.0f} across {n_players:,} players in this market. "
+        "Figures are GBP-normalised deposits plus net gaming result, minus withdrawals."
+    )
 
     st.subheader("Churn composition")
     composition = (
@@ -886,14 +906,21 @@ with tab_governance:
                 path=["classification", "retention_category"],
                 title="Columns by classification tier → retention category",
             )
+            fig.update_layout(height=420, margin=dict(t=50, b=20, l=10, r=10))
             st.plotly_chart(fig, use_container_width=True)
-            class_options = classification["classification"].drop_duplicates().tolist()
-            explain_segment(class_options, CLASSIFICATION_INFO, key="pick_classification")
         with col2:
             pii_counts = classification["pii"].map({True: "PII", False: "Not PII"}).value_counts().reset_index()
             pii_counts.columns = ["Category", "Columns"]
-            fig = px.pie(pii_counts, names="Category", values="Columns", title="PII vs. non-PII columns", hole=0.4)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(
+                sized_pie(pii_counts, names="Category", values="Columns", title="PII vs. non-PII columns", hole=0.4),
+                use_container_width=True,
+            )
+
+        g1, g2 = st.columns(2)
+        with g1:
+            class_options = classification["classification"].drop_duplicates().tolist()
+            explain_segment(class_options, CLASSIFICATION_INFO, key="pick_classification")
+        with g2:
             pii_info = {
                 "pii": "Directly or indirectly identifies a real person, e.g. date of birth, IP "
                 "address, device fingerprint. Subject to UK GDPR.",
