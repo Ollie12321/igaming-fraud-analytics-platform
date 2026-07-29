@@ -71,22 +71,28 @@ def beginner_box(title: str, body: str) -> None:
         st.markdown(body)
 
 
-def explain_selection(event, info: dict, key_names=("label", "x", "theta")) -> None:
-    """Render a plain-English explainer for whatever chart segment the user
-    just clicked, if we recognise it. `event` is whatever
-    `st.plotly_chart(..., on_select='rerun')` returns.
+def explain_segment(
+    options: list[str],
+    info: dict[str, str],
+    *,
+    key: str,
+    prompt: str = "Pick a segment for a plain-English explanation",
+) -> None:
+    """Always-works chart explainer.
+
+    Streamlit's plotly `on_select` is unreliable for pie/donut charts (Plotly
+    doesn't emit a usable selection event for those traces), so we pair every
+    explainer chart with an explicit segment picker instead. Same outcome for
+    the visitor, works on every chart type and every device.
     """
-    points = (event or {}).get("selection", {}).get("points", [])
-    if not points:
-        st.caption("Click a segment above for a plain-English explanation of what it means.")
+    if not options:
         return
-    point = points[0]
-    label = next((point[k] for k in key_names if point.get(k) is not None), None)
-    if label is None:
-        return
-    text = info.get(str(label).lower())
+    picked = st.radio(prompt, options, horizontal=True, key=key)
+    text = info.get(str(picked).lower()) or info.get(str(picked))
     if text:
-        st.info(f"**{label}**: {text}")
+        st.info(f"**{picked}**: {text}")
+    else:
+        st.info(f"**{picked}**")
 
 
 st.title("🎰 iGaming Fraud & Analytics Platform")
@@ -155,20 +161,20 @@ with tab_overview:
     current = scd[scd["is_current"]]
     c1, c2 = st.columns(2)
     with c1:
-        fig = px.pie(
-            current.groupby("vip_tier", as_index=False)["n"].sum(), names="vip_tier", values="n", title="VIP tier"
-        )
-        event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", key="pie_vip")
-        explain_selection(event, VIP_TIER_INFO)
+        vip_df = current.groupby("vip_tier", as_index=False)["n"].sum()
+        fig = px.pie(vip_df, names="vip_tier", values="n", title="VIP tier")
+        st.plotly_chart(fig, use_container_width=True)
+        explain_segment(vip_df["vip_tier"].tolist(), VIP_TIER_INFO, key="pick_vip")
     with c2:
+        sx_df = current.groupby("self_exclusion_status", as_index=False)["n"].sum()
         fig = px.pie(
-            current.groupby("self_exclusion_status", as_index=False)["n"].sum(),
+            sx_df,
             names="self_exclusion_status",
             values="n",
             title="Self-exclusion status",
         )
-        event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", key="pie_selfexcl")
-        explain_selection(event, SELF_EXCLUSION_INFO)
+        st.plotly_chart(fig, use_container_width=True)
+        explain_segment(sx_df["self_exclusion_status"].tolist(), SELF_EXCLUSION_INFO, key="pick_selfexcl")
 
     st.caption(
         "Built from `dim_players_scd2`, a Type 2 slowly changing dimension derived directly from a "
@@ -486,8 +492,9 @@ with tab_fraud:
             summary, x="scenario_type", y="recall", color="entity_type", barmode="group", title="Recall by scenario"
         )
         fig.update_yaxes(range=[0, 1], tickformat=".0%")
-        event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", key="bar_recall")
-        explain_selection(event, FRAUD_SCENARIO_INFO)
+        st.plotly_chart(fig, use_container_width=True)
+        scenario_options = summary["scenario_type"].drop_duplicates().tolist()
+        explain_segment(scenario_options, FRAUD_SCENARIO_INFO, key="pick_fraud_scenario")
     with col2:
         fig = px.bar(
             summary,
@@ -528,16 +535,19 @@ with tab_ltv:
     with col2:
         by_country = ltv.groupby("country", as_index=False)["ltv_gbp"].mean().sort_values("ltv_gbp", ascending=False)
         fig = px.bar(by_country, x="country", y="ltv_gbp", title="Avg LTV by market (GBP)")
-        event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", key="bar_ltv_country")
-        points = (event or {}).get("selection", {}).get("points", [])
-        if points:
-            country = points[0].get("x")
-            row = by_country.loc[by_country["country"] == country]
-            if not row.empty:
-                st.info(
-                    f"**{country}**: average LTV £{row['ltv_gbp'].iloc[0]:,.0f}, "
-                    f"{(ltv['country'] == country).sum():,} players."
-                )
+        st.plotly_chart(fig, use_container_width=True)
+        country = st.radio(
+            "Pick a market for a plain-English explanation",
+            by_country["country"].tolist(),
+            horizontal=True,
+            key="pick_ltv_country",
+        )
+        row = by_country.loc[by_country["country"] == country].iloc[0]
+        n_players = int((ltv["country"] == country).sum())
+        st.info(
+            f"**{country}**: average LTV £{row['ltv_gbp']:,.0f} across {n_players:,} players in this market. "
+            "Figures are GBP-normalised deposits plus net gaming result, minus withdrawals."
+        )
 
     st.subheader("Churn composition")
     composition = (
@@ -876,28 +886,21 @@ with tab_governance:
                 path=["classification", "retention_category"],
                 title="Columns by classification tier → retention category",
             )
-            event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", key="sunburst_class")
-            explain_selection(event, CLASSIFICATION_INFO, key_names=("label",))
+            st.plotly_chart(fig, use_container_width=True)
+            class_options = classification["classification"].drop_duplicates().tolist()
+            explain_segment(class_options, CLASSIFICATION_INFO, key="pick_classification")
         with col2:
             pii_counts = classification["pii"].map({True: "PII", False: "Not PII"}).value_counts().reset_index()
             pii_counts.columns = ["Category", "Columns"]
             fig = px.pie(pii_counts, names="Category", values="Columns", title="PII vs. non-PII columns", hole=0.4)
-            event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", key="pie_pii")
-            points = (event or {}).get("selection", {}).get("points", [])
-            if points:
-                label = points[0].get("label")
-                if label == "PII":
-                    st.info(
-                        "**PII**: directly or indirectly identifies a real person, e.g. date of birth, IP "
-                        "address, device fingerprint. Subject to UK GDPR."
-                    )
-                elif label == "Not PII":
-                    st.info(
-                        "**Not PII**: aggregate or categorical data with no path back to an individual on its "
-                        "own, e.g. a game type code or a country-level total."
-                    )
-            else:
-                st.caption("Click a segment above for a plain-English explanation of what it means.")
+            st.plotly_chart(fig, use_container_width=True)
+            pii_info = {
+                "pii": "Directly or indirectly identifies a real person, e.g. date of birth, IP "
+                "address, device fingerprint. Subject to UK GDPR.",
+                "not pii": "Aggregate or categorical data with no path back to an individual on its "
+                "own, e.g. a game type code or a country-level total.",
+            }
+            explain_segment(pii_counts["Category"].tolist(), pii_info, key="pick_pii")
 
         with st.expander(f"See all {len(classification)} classified columns"):
             st.dataframe(classification, use_container_width=True, hide_index=True)
