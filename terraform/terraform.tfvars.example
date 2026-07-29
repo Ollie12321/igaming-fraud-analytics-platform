@@ -1,0 +1,5 @@
+aws_region   = "eu-west-2"
+aws_profile  = "" # set to a named profile, or leave blank for the default credential chain
+environment  = "demo"
+
+s3_raw_bucket_name = "igaming-fraud-analytics-raw" # must be globally unique: suffix with your own initials/account id

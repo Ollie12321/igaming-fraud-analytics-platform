@@ -1,0 +1,49 @@
+version: 2
+
+models:
+  - name: dim_players_scd2
+    description: >
+      Type 2 SCD over player attributes. Carries the same classification as
+      its source columns forward; see docs/data_governance.md for how a
+      right-to-erasure request is resolved against this table's history.
+    columns:
+      - name: player_dimension_key
+        data_tests: [not_null, unique]
+        meta: {classification: internal, pii: false, retention_category: account_lifetime_plus_aml}
+      - name: player_id
+        data_tests: [not_null]
+        meta: {classification: confidential, pii: true, retention_category: account_lifetime_plus_aml}
+      - name: kyc_status
+        meta: {classification: restricted, pii: true, retention_category: kyc_regulatory}
+      - name: self_exclusion_status
+        meta: {classification: restricted, pii: true, retention_category: responsible_gambling}
+      - name: risk_segment
+        meta: {classification: restricted, pii: true, retention_category: kyc_regulatory}
+
+  - name: fct_player_ltv
+    columns:
+      - name: player_id
+        data_tests: [not_null, unique]
+        meta: {classification: confidential, pii: true, retention_category: financial_aml}
+      - name: ltv_gbp
+        meta: {classification: confidential, pii: false, retention_category: financial_aml}
+      - name: total_deposits_gbp
+        meta: {classification: confidential, pii: false, retention_category: financial_aml}
+
+  - name: fct_churn_labels
+    columns:
+      - name: player_id
+        data_tests: [not_null, unique]
+        meta: {classification: confidential, pii: true, retention_category: account_lifetime_plus_aml}
+      - name: self_exclusion_status_as_of
+        meta: {classification: restricted, pii: true, retention_category: responsible_gambling}
+
+  - name: fct_fraud_summary
+    description: >
+      Aggregated recall/latency metrics only; contains no entity-level
+      identifiers, so this mart is classified lower than the staging tables
+      it's built from.
+    columns:
+      - name: scenario_type
+        data_tests: [not_null]
+        meta: {classification: internal, pii: false, retention_category: fraud_signal}

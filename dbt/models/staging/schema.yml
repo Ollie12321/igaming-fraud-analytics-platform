@@ -1,0 +1,156 @@
+version: 2
+
+# meta.classification follows the four-tier scheme in docs/data_governance.md:
+#   public | internal | confidential | restricted
+# meta.pii marks columns that are personal data under UK GDPR (direct or
+# indirect identifiers), independent of classification tier.
+# meta.retention_category maps to the retention schedule in the same doc.
+
+models:
+  - name: stg_players
+    columns:
+      - name: player_id
+        data_tests: [not_null, unique]
+        meta: {classification: confidential, pii: true, retention_category: account_lifetime_plus_aml}
+      - name: signup_ts
+        meta: {classification: internal, pii: false, retention_category: account_lifetime_plus_aml}
+      - name: country
+        data_tests:
+          - accepted_values:
+              values: ['GB', 'IE', 'SE', 'DK', 'DE', 'CA']
+        meta: {classification: internal, pii: false, retention_category: account_lifetime_plus_aml}
+      - name: currency
+        meta: {classification: internal, pii: false, retention_category: account_lifetime_plus_aml}
+      - name: acquisition_channel
+        meta: {classification: internal, pii: false, retention_category: account_lifetime_plus_aml}
+      - name: activity_segment
+        meta: {classification: internal, pii: false, retention_category: account_lifetime_plus_aml}
+      - name: date_of_birth
+        meta: {classification: restricted, pii: true, retention_category: kyc_regulatory}
+      - name: age_at_signup
+        meta: {classification: internal, pii: false, retention_category: account_lifetime_plus_aml}
+
+  - name: stg_devices
+    columns:
+      - name: device_id
+        data_tests: [not_null, unique]
+        meta: {classification: confidential, pii: true, retention_category: fraud_signal}
+      - name: first_seen_player_id
+        meta: {classification: confidential, pii: true, retention_category: fraud_signal}
+      - name: first_seen_ts
+        meta: {classification: internal, pii: false, retention_category: fraud_signal}
+      - name: os
+        meta: {classification: internal, pii: false, retention_category: fraud_signal}
+      - name: is_shared_fraud_ring
+        meta: {classification: restricted, pii: false, retention_category: fraud_signal}
+
+  - name: stg_player_attribute_history
+    columns:
+      - name: player_id
+        meta: {classification: confidential, pii: true, retention_category: account_lifetime_plus_aml}
+      - name: effective_ts
+        meta: {classification: internal, pii: false, retention_category: account_lifetime_plus_aml}
+      - name: vip_tier
+        meta: {classification: internal, pii: false, retention_category: account_lifetime_plus_aml}
+      - name: kyc_status
+        data_tests:
+          - accepted_values:
+              values: ['pending', 'verified', 'rejected']
+        meta: {classification: restricted, pii: true, retention_category: kyc_regulatory}
+      - name: self_exclusion_status
+        data_tests:
+          - accepted_values:
+              values: ['none', 'cooling_off', 'self_excluded']
+        meta: {classification: restricted, pii: true, retention_category: responsible_gambling}
+      - name: risk_segment
+        meta: {classification: restricted, pii: true, retention_category: kyc_regulatory}
+
+  - name: stg_sessions
+    columns:
+      - name: session_id
+        data_tests: [not_null, unique]
+        meta: {classification: internal, pii: false, retention_category: fraud_signal}
+      - name: player_id
+        meta: {classification: confidential, pii: true, retention_category: fraud_signal}
+      - name: device_id
+        meta: {classification: confidential, pii: true, retention_category: fraud_signal}
+      - name: ip_address
+        meta: {classification: confidential, pii: true, retention_category: fraud_signal}
+      - name: country_from_ip
+        meta: {classification: internal, pii: false, retention_category: fraud_signal}
+
+  - name: stg_login_events
+    columns:
+      - name: login_id
+        meta: {classification: internal, pii: false, retention_category: fraud_signal}
+      - name: player_id
+        meta: {classification: confidential, pii: true, retention_category: fraud_signal}
+      - name: device_id
+        meta: {classification: confidential, pii: true, retention_category: fraud_signal}
+      - name: ip_address
+        meta: {classification: confidential, pii: true, retention_category: fraud_signal}
+      - name: country_from_ip
+        meta: {classification: internal, pii: false, retention_category: fraud_signal}
+
+  - name: stg_game_rounds
+    columns:
+      - name: round_id
+        data_tests: [not_null, unique]
+        meta: {classification: internal, pii: false, retention_category: financial_aml}
+      - name: player_id
+        meta: {classification: confidential, pii: true, retention_category: financial_aml}
+      - name: game_type
+        meta: {classification: public, pii: false, retention_category: financial_aml}
+      - name: stake_amount
+        data_tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+        meta: {classification: confidential, pii: false, retention_category: financial_aml}
+
+  - name: stg_payments
+    columns:
+      - name: payment_id
+        data_tests: [not_null, unique]
+        meta: {classification: internal, pii: false, retention_category: financial_aml}
+      - name: player_id
+        meta: {classification: confidential, pii: true, retention_category: financial_aml}
+      - name: payment_type
+        data_tests:
+          - accepted_values:
+              values: ['deposit', 'withdrawal']
+        meta: {classification: internal, pii: false, retention_category: financial_aml}
+      - name: amount_gbp
+        data_tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+        meta: {classification: confidential, pii: false, retention_category: financial_aml}
+      - name: card_bin
+        meta: {classification: confidential, pii: true, retention_category: financial_aml}
+      - name: device_id
+        meta: {classification: confidential, pii: true, retention_category: financial_aml}
+
+  - name: stg_bonuses
+    columns:
+      - name: bonus_id
+        meta: {classification: internal, pii: false, retention_category: financial_aml}
+      - name: player_id
+        meta: {classification: confidential, pii: true, retention_category: financial_aml}
+      - name: device_id
+        meta: {classification: confidential, pii: true, retention_category: financial_aml}
+
+  - name: stg_fraud_ground_truth
+    columns:
+      - name: scenario_type
+        data_tests:
+          - accepted_values:
+              values: ['bonus_abuse_ring', 'card_testing', 'account_takeover', 'self_exclusion_breach', 'bot_betting', 'structuring']
+        meta: {classification: internal, pii: false, retention_category: fraud_signal}
+      - name: entity_id
+        meta: {classification: confidential, pii: true, retention_category: fraud_signal}
+
+  - name: stg_streaming_fraud_flags
+    columns:
+      - name: entity_id
+        meta: {classification: confidential, pii: true, retention_category: fraud_signal}
+      - name: scenario_type
+        meta: {classification: internal, pii: false, retention_category: fraud_signal}

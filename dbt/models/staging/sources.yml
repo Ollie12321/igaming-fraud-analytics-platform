@@ -1,0 +1,16 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      - name: players
+      - name: devices
+      - name: player_attribute_history
+      - name: sessions
+      - name: login_events
+      - name: game_rounds
+      - name: payments
+      - name: bonuses
+      - name: fraud_ground_truth
+      - name: streaming_fraud_flags

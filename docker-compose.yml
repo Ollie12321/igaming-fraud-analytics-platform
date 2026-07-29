@@ -1,0 +1,110 @@
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.9.1-python3.11
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
+    AIRFLOW__CORE__FERNET_KEY: ""
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
+    AWS_REGION: ${AWS_REGION:-eu-west-2}
+    AWS_PROFILE: ${AWS_PROFILE:-}
+    S3_RAW_BUCKET: ${S3_RAW_BUCKET}
+    KINESIS_STREAM_NAME: ${KINESIS_STREAM_NAME:-igaming-player-events}
+    WAREHOUSE_HOST: warehouse
+    WAREHOUSE_PORT: "5432"
+    WAREHOUSE_DB: ${WAREHOUSE_DB:-igaming}
+    WAREHOUSE_USER: ${WAREHOUSE_USER:-igaming}
+    WAREHOUSE_PASSWORD: ${WAREHOUSE_PASSWORD:-igaming}
+    NUM_PLAYERS: ${NUM_PLAYERS:-10000}
+    SIMULATION_DAYS: ${SIMULATION_DAYS:-150}
+    RANDOM_SEED: ${RANDOM_SEED:-42}
+    PIPELINE_ROOT: /opt/airflow/project
+    _PIP_ADDITIONAL_REQUIREMENTS: >-
+      pandas numpy pyarrow boto3 psycopg2-binary sqlalchemy
+      great-expectations dbt-postgres
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./datagen:/opt/airflow/project/datagen
+    - ./load:/opt/airflow/project/load
+    - ./config:/opt/airflow/project/config
+    - ./dbt:/opt/airflow/project/dbt
+    - ./quality:/opt/airflow/project/quality
+    - ./streaming:/opt/airflow/project/streaming
+    - ./data:/opt/airflow/project/data
+    - ./secrets:/opt/airflow/secrets:ro
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on:
+    airflow-postgres:
+      condition: service_healthy
+    warehouse:
+      condition: service_healthy
+
+services:
+  # Metadata DB for Airflow itself
+  airflow-postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Local warehouse: stands in for Redshift to avoid always-on cloud cost.
+  # dbt targets this via dbt/profiles.yml (postgres adapter).
+  warehouse:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${WAREHOUSE_USER:-igaming}
+      POSTGRES_PASSWORD: ${WAREHOUSE_PASSWORD:-igaming}
+      POSTGRES_DB: ${WAREHOUSE_DB:-igaming}
+    ports:
+      - "5433:5432"
+    volumes:
+      - warehouse-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "igaming"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        mkdir -p /sources/logs /sources/dags /sources/plugins
+        airflow db migrate
+        airflow users create \
+          --username admin \
+          --password admin \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email admin@example.com || true
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+
+volumes:
+  airflow-db-volume:
+  warehouse-db-volume:

@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  # Small-scale run so the full pipeline finishes in a couple of minutes on a
+  # shared runner. The same code path runs at NUM_PLAYERS=10000 locally/in the DAG.
+  NUM_PLAYERS: "800"
+  SIMULATION_DAYS: "45"
+  RANDOM_SEED: "42"
+  WAREHOUSE_HOST: localhost
+  WAREHOUSE_PORT: "5432"
+  WAREHOUSE_DB: igaming
+  WAREHOUSE_USER: igaming
+  WAREHOUSE_PASSWORD: igaming
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install lint tools
+        run: pip install ruff black
+      - name: Ruff
+        run: ruff check .
+      - name: Black (check only)
+        run: black --check .
+
+  pipeline:
+    runs-on: ubuntu-latest
+    needs: lint
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: igaming
+          POSTGRES_PASSWORD: igaming
+          POSTGRES_DB: igaming
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U igaming"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate synthetic data
+        run: python -m datagen.simulate --output-dir data/raw
+
+      - name: Run raw-layer data quality gate (Great Expectations)
+        run: python -m quality.raw_data_checks --raw-dir data/raw
+
+      - name: Run streaming fraud-rule backtest
+        run: python -m streaming.local_backtest --input-dir data/raw --output-dir data/processed
+
+      - name: Load raw + streaming outputs into warehouse
+        run: python -m load.postgres_loader --input-dir data/raw --processed-dir data/processed
+
+      - name: Configure dbt profile
+        working-directory: dbt
+        run: cp profiles.yml.example profiles.yml
+
+      - name: dbt deps
+        working-directory: dbt
+        run: dbt deps
+
+      - name: dbt seed
+        working-directory: dbt
+        run: dbt seed --profiles-dir .
+
+      - name: dbt run
+        working-directory: dbt
+        run: dbt run --profiles-dir .
+
+      - name: dbt test
+        working-directory: dbt
+        run: dbt test --profiles-dir .
+
+      - name: Governance right-to-erasure smoke test
+        run: |
+          PLAYER_ID=$(python -c "
+          from sqlalchemy import create_engine, text
+          from config import get_settings
+          engine = create_engine(get_settings().warehouse_sqlalchemy_url)
+          with engine.connect() as conn:
+              print(conn.execute(text('SELECT player_id FROM raw.players LIMIT 1')).scalar())
+          ")
+          python -m governance.erasure --player-id "$PLAYER_ID"
+
+      - name: GIGO comparison (naive vs. engineered churn model)
+        run: python -m ml.naive_vs_engineered
+
+      - name: Upload pipeline artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-artifacts
+          path: |
+            ml/artifacts/comparison_results.json
+            dbt/target/run_results.json
+          if-no-files-found: ignore
+
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.8.5"
+      - name: terraform fmt (check only)
+        run: terraform fmt -check -recursive
+      - name: terraform init (no backend)
+        run: terraform init -backend=false
+      - name: terraform validate
+        run: terraform validate

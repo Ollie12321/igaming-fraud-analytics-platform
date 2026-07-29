@@ -1,0 +1,17 @@
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+exclude = ["dbt", "terraform", ".venv", "data", "ml/artifacts"]
+
+[tool.ruff.lint]
+# Deliberately narrow: correctness + import hygiene, not full pedantic
+# lint coverage: this is a demo/portfolio pipeline, not a published library.
+select = ["E", "F", "I"]
+# Line length is Black's job, not Ruff's. Black won't always split a long
+# dict/string literal down to 120 chars, so gating on E501 too just fights it.
+ignore = ["E501"]
+
+[tool.black]
+line-length = 120
+target-version = ["py311"]
+extend-exclude = "/(dbt|terraform|\\.venv|data)/"
