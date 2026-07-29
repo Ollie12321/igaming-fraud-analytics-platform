@@ -1,5 +1,12 @@
 # iGaming Fraud & Analytics Platform
 
+[Live interactive dashboard](https://ollie12321-igaming-fraud-analytics-plat-streamlit-appapp-rpmiko.streamlit.app/),
+reading a versioned snapshot of this repo's synthetic data. Pick a fraud
+scenario and drag the detection-interval slider to see real exposure
+figures change, toggle data engineering fixes on/off and watch a distorted
+metric heal in real time, or run a simulated GDPR erasure request against a
+sample player.
+
 An end-to-end data platform for an online gambling operator, built to answer one
 question properly: which parts of a data platform actually need to be
 real-time, and why does the rest of the business run better on batch?
@@ -128,6 +135,12 @@ a detector that reports 100% recall on synthetic data with 0% false positives
 on every rule usually means the injected scenarios were too easy, not that
 the rules are good.
 
+The dashboard's Batch vs. Streaming tab turns this into a calculator: pick a
+scenario, drag a detection-interval slider from real-time down to a daily
+batch check, and it computes the expected additional fraud exposure in GBP
+from this project's own measured event rate and average transaction value,
+not a made-up number.
+
 ## Data Quality to Model Quality (the core thesis)
 
 `ml/naive_vs_engineered.py` trains the same `LogisticRegression` churn model,
@@ -205,6 +218,14 @@ than a policy document nobody implements. Full detail in
   this number come from" and "what does this PII field feed into" are always
   answerable.
 
+The dashboard's Data Governance tab renders the classification/PII/retention
+metadata straight from the dbt `schema.yml` files (not a separate copy of
+it), and includes a working simulator: pick a sample player, submit a
+right-to-erasure request, and it runs the real salted hash function live
+against a real "before" value, then shows exactly what gets pseudonymised
+versus retained and why. No data is written anywhere; it's read-only against
+a bundled snapshot.
+
 ## Tech stack
 
 | Layer | Tool | Notes |
@@ -239,7 +260,7 @@ streaming/
   flink_reference/       Reference-only alternative implementation
   local_backtest.py      Replays events through the same rules with in-memory state (no AWS needed)
 ml/                   Naive-vs-engineered churn model comparison (the GIGO demo)
-streamlit_app/        Dashboard: overview, fraud, LTV/churn, GIGO
+streamlit_app/        Dashboard: overview, batch vs streaming, fraud, LTV/churn, GIGO, governance
 dags/                 Airflow DAGs (batch pipeline, flag sync, GIGO retrain)
 terraform/            AWS IaC for the streaming stack
 docs/                 Data dictionary, data governance policy

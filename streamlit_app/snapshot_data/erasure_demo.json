@@ -1,0 +1,189 @@
+{
+  "players": [
+    {
+      "player_id": "05b2d75d-b5fa-4d8a-8e11-4955f7266808",
+      "vip_tier": "bronze",
+      "kyc_status": "pending",
+      "self_exclusion_status": "cooling_off",
+      "risk_segment": "high",
+      "sample_ip_address": "241.161.244.241",
+      "date_of_birth": "1997-04-06 00:00:00",
+      "rows_affected": {
+        "sessions.ip_address": 21,
+        "login_events.ip_address": 21,
+        "players.date_of_birth": 1
+      },
+      "retained_row_counts": {
+        "payments": 14,
+        "game_rounds": 168,
+        "bonuses": 1,
+        "player_attribute_history": 2,
+        "fraud_ground_truth": 0,
+        "streaming_fraud_flags": 0
+      }
+    },
+    {
+      "player_id": "002117b3-2911-4dcc-bb56-572ec6baff86",
+      "vip_tier": "bronze",
+      "kyc_status": "pending",
+      "self_exclusion_status": "none",
+      "risk_segment": "low",
+      "sample_ip_address": "161.56.129.218",
+      "date_of_birth": "1974-02-17 00:00:00",
+      "rows_affected": {
+        "sessions.ip_address": 8,
+        "login_events.ip_address": 8,
+        "players.date_of_birth": 1
+      },
+      "retained_row_counts": {
+        "payments": 6,
+        "game_rounds": 65,
+        "bonuses": 2,
+        "player_attribute_history": 1,
+        "fraud_ground_truth": 0,
+        "streaming_fraud_flags": 0
+      }
+    },
+    {
+      "player_id": "2147dc63-ef5a-412c-98b0-e65162137311",
+      "vip_tier": "bronze",
+      "kyc_status": "pending",
+      "self_exclusion_status": "self_excluded",
+      "risk_segment": "high",
+      "sample_ip_address": "251.129.202.189",
+      "date_of_birth": "1975-09-05 00:00:00",
+      "rows_affected": {
+        "sessions.ip_address": 1,
+        "login_events.ip_address": 2,
+        "players.date_of_birth": 1
+      },
+      "retained_row_counts": {
+        "payments": 0,
+        "game_rounds": 4,
+        "bonuses": 1,
+        "player_attribute_history": 2,
+        "fraud_ground_truth": 0,
+        "streaming_fraud_flags": 0
+      }
+    },
+    {
+      "player_id": "00a3b3cc-3403-4db6-8b01-184cbe606d60",
+      "vip_tier": "bronze",
+      "kyc_status": "rejected",
+      "self_exclusion_status": "none",
+      "risk_segment": "low",
+      "sample_ip_address": null,
+      "date_of_birth": "1990-02-05 00:00:00",
+      "rows_affected": {
+        "sessions.ip_address": 0,
+        "login_events.ip_address": 0,
+        "players.date_of_birth": 1
+      },
+      "retained_row_counts": {
+        "payments": 0,
+        "game_rounds": 0,
+        "bonuses": 1,
+        "player_attribute_history": 2,
+        "fraud_ground_truth": 0,
+        "streaming_fraud_flags": 0
+      }
+    },
+    {
+      "player_id": "687712fe-bb46-47a8-b782-941cde5aaf96",
+      "vip_tier": "bronze",
+      "kyc_status": "rejected",
+      "self_exclusion_status": "self_excluded",
+      "risk_segment": "high",
+      "sample_ip_address": "118.182.31.142",
+      "date_of_birth": "1972-07-24 00:00:00",
+      "rows_affected": {
+        "sessions.ip_address": 5,
+        "login_events.ip_address": 5,
+        "players.date_of_birth": 1
+      },
+      "retained_row_counts": {
+        "payments": 2,
+        "game_rounds": 39,
+        "bonuses": 2,
+        "player_attribute_history": 3,
+        "fraud_ground_truth": 0,
+        "streaming_fraud_flags": 0
+      }
+    },
+    {
+      "player_id": "01b082f7-18ad-42e0-878e-be7af14e1fb9",
+      "vip_tier": "bronze",
+      "kyc_status": "verified",
+      "self_exclusion_status": "cooling_off",
+      "risk_segment": "high",
+      "sample_ip_address": "146.151.194.36",
+      "date_of_birth": "1962-06-10 00:00:00",
+      "rows_affected": {
+        "sessions.ip_address": 2,
+        "login_events.ip_address": 2,
+        "players.date_of_birth": 1
+      },
+      "retained_row_counts": {
+        "payments": 1,
+        "game_rounds": 25,
+        "bonuses": 2,
+        "player_attribute_history": 3,
+        "fraud_ground_truth": 0,
+        "streaming_fraud_flags": 0
+      }
+    },
+    {
+      "player_id": "0005480a-ae4e-4d67-88ae-e3b43f38b643",
+      "vip_tier": "bronze",
+      "kyc_status": "verified",
+      "self_exclusion_status": "none",
+      "risk_segment": "low",
+      "sample_ip_address": "75.88.240.153",
+      "date_of_birth": "2006-08-12 00:00:00",
+      "rows_affected": {
+        "sessions.ip_address": 34,
+        "login_events.ip_address": 34,
+        "players.date_of_birth": 1
+      },
+      "retained_row_counts": {
+        "payments": 15,
+        "game_rounds": 371,
+        "bonuses": 1,
+        "player_attribute_history": 2,
+        "fraud_ground_truth": 0,
+        "streaming_fraud_flags": 0
+      }
+    },
+    {
+      "player_id": "059d19f6-10c1-4251-ad63-dbc394a86746",
+      "vip_tier": "bronze",
+      "kyc_status": "verified",
+      "self_exclusion_status": "self_excluded",
+      "risk_segment": "high",
+      "sample_ip_address": null,
+      "date_of_birth": "1991-08-19 00:00:00",
+      "rows_affected": {
+        "sessions.ip_address": 0,
+        "login_events.ip_address": 0,
+        "players.date_of_birth": 1
+      },
+      "retained_row_counts": {
+        "payments": 0,
+        "game_rounds": 0,
+        "bonuses": 2,
+        "player_attribute_history": 3,
+        "fraud_ground_truth": 0,
+        "streaming_fraud_flags": 0
+      }
+    }
+  ],
+  "retained_reasons": {
+    "payments": "AML transaction record-keeping (Money Laundering Regulations 2017, reg. 40)",
+    "game_rounds": "gameplay/RTP audit trail (UK Gambling Commission LCCP requirement)",
+    "bonuses": "bonus/promotional abuse audit trail",
+    "player_attribute_history": "KYC status and self-exclusion history (regulatory record)",
+    "fraud_ground_truth": "fraud/AML investigation record",
+    "streaming_fraud_flags": "fraud/AML investigation record",
+    "devices": "fraud-ring linkage evidence; device_id is an opaque fingerprint, not a direct identifier"
+  }
+}
