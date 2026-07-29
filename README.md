@@ -282,6 +282,17 @@ streamlit run streamlit_app/app.py
 Airflow UI: http://localhost:8080 (admin/admin). `igaming_batch_pipeline`
 runs steps 3 to 5 end to end on a schedule.
 
+### Regenerating the public dashboard snapshot
+
+The hosted dashboard has no access to the local Docker warehouse, so it reads
+a versioned snapshot from `streamlit_app/snapshot_data/` instead of querying
+Postgres live (`USE_SNAPSHOT_DATA=true`). Regenerate it after changing the
+data or models:
+
+```bash
+python -m streamlit_app.export_snapshot
+```
+
 ### Deploying the real-time stack to AWS (optional)
 
 ```bash

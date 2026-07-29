@@ -31,6 +31,11 @@ class Settings:
     # Governance
     erasure_pseudonymisation_salt: str
 
+    # Streamlit app: read a versioned data snapshot instead of the live warehouse.
+    # Used for the public Community Cloud deployment, which has no access to the
+    # local Docker warehouse; local runs default to the live database.
+    use_snapshot_data: bool
+
     @property
     def warehouse_sqlalchemy_url(self) -> str:
         return (
@@ -59,4 +64,5 @@ def get_settings() -> Settings:
         random_seed=int(os.environ.get("RANDOM_SEED", "42")),
         fraud_injection_rate=float(os.environ.get("FRAUD_INJECTION_RATE", "0.015")),
         erasure_pseudonymisation_salt=os.environ.get("GOVERNANCE_ERASURE_SALT", "local-dev-salt-change-in-production"),
+        use_snapshot_data=os.environ.get("USE_SNAPSHOT_DATA", "false").lower() == "true",
     )

@@ -2,6 +2,7 @@
 secrets/
 *.json
 !.github/**/*.json
+!streamlit_app/snapshot_data/**/*.json
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -21,6 +22,7 @@ dbt/.user.yml
 .DS_Store
 data/
 *.parquet
+!streamlit_app/snapshot_data/**/*.parquet
 .venv/
 .venv-dbt/
 ml/artifacts/

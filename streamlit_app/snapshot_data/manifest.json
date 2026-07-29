@@ -1,0 +1,10 @@
+{
+  "source": "export_snapshot.py",
+  "tables": [
+    "fraud_summary",
+    "recent_flags",
+    "player_ltv",
+    "churn_labels",
+    "scd_summary"
+  ]
+}

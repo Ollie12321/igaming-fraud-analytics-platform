@@ -18,6 +18,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from config import get_settings
 from streamlit_app import data_access as da
 
 st.set_page_config(page_title="iGaming Fraud & Analytics Platform", layout="wide", page_icon="🎰")
@@ -28,6 +29,13 @@ st.caption(
     "Streaming fraud detection runs on AWS Kinesis + Lambda + DynamoDB; batch analytics "
     "run on a local warehouse via dbt. See README for the reasoning behind that split."
 )
+if get_settings().use_snapshot_data:
+    st.info(
+        "This public demo reads a versioned data snapshot rather than a live database, "
+        "the same batch-over-always-on argument this project makes about warehousing. "
+        "Run it locally against the real pipeline for live queries: see README.",
+        icon="📦",
+    )
 
 tab_overview, tab_fraud, tab_ltv, tab_gigo = st.tabs(
     ["📊 Overview", "🛡️ Real-Time Fraud Detection", "💰 LTV & Churn", "⚠️ Data Quality → Model Quality"]

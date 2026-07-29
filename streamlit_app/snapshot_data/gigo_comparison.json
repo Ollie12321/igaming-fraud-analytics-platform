@@ -1,0 +1,33 @@
+{
+  "as_of_date": "2026-06-30 00:00:00",
+  "naive": {
+    "n_train": 5801,
+    "n_test": 1934,
+    "positive_rate": 0.027149321266968326,
+    "auc": 0.8467394902350216,
+    "average_precision": 0.35149346932475156,
+    "precision": 0.07426597582037997,
+    "recall": 0.8113207547169812
+  },
+  "engineered": {
+    "n_train": 5802,
+    "n_test": 1934,
+    "positive_rate": 0.022104446742502587,
+    "auc": 0.8454613653413353,
+    "average_precision": 0.25915538046621617,
+    "precision": 0.05598755832037325,
+    "recall": 0.8372093023255814
+  },
+  "auc_delta": -0.0012781248936862832,
+  "portfolio_value_distortion": {
+    "naive_total_deposits_unconverted_currency": 6016211.57,
+    "engineered_total_deposits_gbp": 3430534.2,
+    "combined_distortion_pct": 75.4,
+    "dedup_only_distortion_pct": 2.4,
+    "currency_mixing_distortion_pct": 73.0
+  },
+  "self_exclusion_contamination": {
+    "self_excluded_players_mislabelled_as_churn_in_naive": 58,
+    "total_self_excluded_players": 58
+  }
+}
